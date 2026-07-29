@@ -1,13 +1,18 @@
-use serde::{Deserialize, Serialize};
+use crate::server::models::response::ErrorResponse;
+use crate::server::proto;
+use crate::server::utils::parse_u128;
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InsertEntriesParams {
-    data: Vec<Vec<u128>>,
-}
-
-impl InsertEntriesParams {
-    pub fn get_data(&self) -> Vec<Vec<u128>> {
-        self.data.to_vec()
+impl proto::InsertEntriesRequest {
+    pub fn get_data(&self) -> Result<Vec<Vec<u128>>, ErrorResponse> {
+        self.data
+            .iter()
+            .map(|entry| {
+                entry
+                    .data
+                    .iter()
+                    .map(|value| parse_u128(value, "data"))
+                    .collect()
+            })
+            .collect()
     }
 }

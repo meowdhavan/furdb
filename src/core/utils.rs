@@ -30,6 +30,10 @@ pub fn get_sortfile_path(fur_directory: &Path, database_id: &str, table_id: &str
 }
 
 pub fn is_id_valid(id: &str) -> bool {
-    id.chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    // `all()` over an empty string is vacuously true, and an empty ID resolves
+    // to the parent directory rather than to anything inside it.
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }

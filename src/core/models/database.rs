@@ -68,4 +68,12 @@ impl DatabaseInfoExtra {
             database_tables,
         }
     }
+
+    pub fn get_database_info(&self) -> DatabaseInfo {
+        self.database_info.to_owned()
+    }
+
+    pub fn get_database_tables(&self) -> Vec<String> {
+        self.database_tables.to_owned()
+    }
 }

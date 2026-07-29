@@ -33,7 +33,11 @@ impl Database {
         let table_sortfile_path =
             utils::get_sortfile_path(&config.workdir, &database_info.get_database_id(), table_id);
 
-        if table_columns.iter().fold(0, |acc, x| acc + x.get_size()) % 8 != 0 {
+        // A zero-width row also satisfies `% 8 == 0`, but `entry_size` becomes 0
+        // and every later read divides the file length by it.
+        let row_size = table_columns.iter().fold(0, |acc, x| acc + x.get_size());
+
+        if row_size == 0 || row_size % 8 != 0 {
             return Err(TableCreationError::ColumnsUnfit);
         }
 

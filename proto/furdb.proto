@@ -1,0 +1,217 @@
+syntax = "proto3";
+
+package furdb;
+
+// FurDB.
+//
+// Every response carries the same envelope the API has always returned:
+// `result`, `statusCode`, `status` and the operation-specific `response`
+// payload. Operations that used to answer with a null payload simply omit
+// the `response` field.
+//
+// A column may be up to 128 bits wide, and protobuf has no 128-bit integer, so
+// the values stored in one travel as decimal strings.
+service FurDb {
+  rpc GetServerInfo(GetServerInfoRequest) returns (ServerInfoResponse);
+
+  rpc CreateDatabase(CreateDatabaseRequest) returns (DatabaseCreatedResponse);
+  rpc GetDatabase(GetDatabaseRequest) returns (DatabaseInfoResponse);
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (DatabaseDeletedResponse);
+
+  rpc CreateTable(CreateTableRequest) returns (TableCreatedResponse);
+  rpc GetTable(GetTableRequest) returns (TableInfoResponse);
+  rpc DeleteTable(DeleteTableRequest) returns (TableDeletedResponse);
+
+  rpc InsertEntries(InsertEntriesRequest) returns (EntriesCreatedResponse);
+  rpc GetEntries(GetEntriesRequest) returns (EntriesResultResponse);
+  rpc DeleteEntries(DeleteEntriesRequest) returns (EntriesDeletedResponse);
+}
+
+//
+// Payloads
+//
+
+message FurDbConfig {
+  string workdir = 1;
+}
+
+message Column {
+  // Number of bits the column occupies. Bounded by the row size, so unlike the
+  // values it holds this always fits in 64 bits.
+  uint64 size = 1;
+}
+
+message DatabaseInfo {
+  string database_id = 1;
+}
+
+message DatabaseInfoExtra {
+  string database_id = 1;
+  repeated string database_tables = 2;
+}
+
+message TableInfo {
+  string database_id = 1;
+  string table_id = 2;
+  repeated Column table_columns = 3;
+}
+
+message Entry {
+  uint64 index = 1;
+  // One decimal string per column.
+  repeated string data = 2;
+}
+
+message EntriesResult {
+  uint64 result_count = 1;
+  repeated Entry results = 2;
+}
+
+// A single row of values to insert, one decimal string per column.
+message EntryData {
+  repeated string data = 1;
+}
+
+// Selects every entry in the table.
+message AllEntries {}
+
+// Selects entries by their index in the table.
+message EntryIndices {
+  repeated uint64 indices = 1;
+}
+
+// Selects entries whose column holds an exact value.
+message EntriesByValue {
+  uint64 column_index = 1;
+  // Decimal string.
+  string value = 2;
+}
+
+//
+// Requests
+//
+
+message GetServerInfoRequest {}
+
+message CreateDatabaseRequest {
+  string database_id = 1;
+}
+
+message GetDatabaseRequest {
+  string database_id = 1;
+}
+
+message DeleteDatabaseRequest {
+  string database_id = 1;
+}
+
+message CreateTableRequest {
+  string database_id = 1;
+  string table_id = 2;
+  repeated Column table_columns = 3;
+}
+
+message GetTableRequest {
+  string database_id = 1;
+  string table_id = 2;
+}
+
+message DeleteTableRequest {
+  string database_id = 1;
+  string table_id = 2;
+}
+
+message InsertEntriesRequest {
+  string database_id = 1;
+  string table_id = 2;
+  repeated EntryData data = 3;
+}
+
+message GetEntriesRequest {
+  string database_id = 1;
+  string table_id = 2;
+  oneof entries {
+    AllEntries all = 3;
+    EntryIndices indices = 4;
+    EntriesByValue value = 5;
+  }
+}
+
+message DeleteEntriesRequest {
+  string database_id = 1;
+  string table_id = 2;
+  oneof entries {
+    AllEntries all = 3;
+    EntryIndices indices = 4;
+  }
+}
+
+//
+// Responses
+//
+
+message ServerInfoResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+  FurDbConfig response = 4;
+}
+
+message DatabaseCreatedResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+  DatabaseInfo response = 4;
+}
+
+message DatabaseInfoResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+  DatabaseInfoExtra response = 4;
+}
+
+message DatabaseDeletedResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+}
+
+message TableCreatedResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+  TableInfo response = 4;
+}
+
+message TableInfoResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+  TableInfo response = 4;
+}
+
+message TableDeletedResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+}
+
+message EntriesCreatedResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+}
+
+message EntriesResultResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+  EntriesResult response = 4;
+}
+
+message EntriesDeletedResponse {
+  string result = 1;
+  uint32 status_code = 2;
+  string status = 3;
+}

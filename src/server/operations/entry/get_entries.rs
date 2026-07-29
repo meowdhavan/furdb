@@ -1,33 +1,43 @@
-use actix_web::get;
-use actix_web::web::{Data, Json, Path};
-
 use crate::core::FurDB;
 
-use crate::server::models::params::{GetEntriesParams, GetEntriesType};
-
 use crate::server::models::response::ErrorResponse;
-use crate::server::models::response::SuccessResponse;
+use crate::server::proto;
+use crate::server::proto::get_entries_request::Entries;
 
-#[get("/{database_id}/{table_id}/data")]
-pub async fn get_entries_handler(
-    data: Data<FurDB>,
-    path: Path<(String, String)>,
-    get_entries_params: Json<GetEntriesParams>,
-) -> Result<SuccessResponse, ErrorResponse> {
-    let (database_id, table_id) = path.into_inner();
+/// The request's entry selection, with its values already parsed.
+enum Selection {
+    All,
+    Indices(Vec<u64>),
+    Value(u64, u128),
+}
 
-    let furdb = data.as_ref();
-    let database = furdb.get_database(&database_id)?;
-    let table = database.get_table(&table_id)?;
+pub fn get_entries(
+    furdb: &FurDB,
+    request: proto::GetEntriesRequest,
+) -> Result<proto::EntriesResultResponse, ErrorResponse> {
+    let entries = request.entries.as_ref().ok_or_else(|| {
+        ErrorResponse::BadRequest("No entry selection given for `entries`".to_string())
+    })?;
 
-    let entries_result = match &get_entries_params.get_entries() {
-        GetEntriesType::All => table.get_all_entries(),
-        GetEntriesType::Indices(indices) => table.get_entries(indices.to_vec()),
-        GetEntriesType::Value(get_entries_by_value_params) => table.query(
-            get_entries_by_value_params.get_column_index(),
-            get_entries_by_value_params.get_value(),
+    // The request is validated before anything is looked up, so a malformed
+    // value is reported as such rather than as a missing database.
+    let selection = match entries {
+        Entries::All(_) => Selection::All,
+        Entries::Indices(entry_indices) => Selection::Indices(entry_indices.indices.to_vec()),
+        Entries::Value(entries_by_value) => Selection::Value(
+            entries_by_value.get_column_index(),
+            entries_by_value.get_value()?,
         ),
+    };
+
+    let database = furdb.get_database(&request.database_id)?;
+    let table = database.get_table(&request.table_id)?;
+
+    let entries_result = match selection {
+        Selection::All => table.get_all_entries(),
+        Selection::Indices(indices) => table.get_entries(indices),
+        Selection::Value(column_index, value) => table.query(column_index, value),
     }?;
 
-    Ok(SuccessResponse::EntriesResult(entries_result))
+    Ok(proto::EntriesResultResponse::new(entries_result.into()))
 }

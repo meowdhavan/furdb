@@ -1,15 +1,12 @@
-use serde::{Deserialize, Serialize};
-
 use crate::core::models::Column;
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateTableParams {
-    table_columns: Vec<Column>,
-}
+use crate::server::proto;
 
-impl CreateTableParams {
+impl proto::CreateTableRequest {
     pub fn get_table_columns(&self) -> Vec<Column> {
-        self.table_columns.to_vec()
+        self.table_columns
+            .iter()
+            .map(|column| Column::new(column.size as u128))
+            .collect()
     }
 }

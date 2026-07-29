@@ -7,6 +7,10 @@ pub struct Column {
 }
 
 impl Column {
+    pub fn new(size: u128) -> Self {
+        Self { size }
+    }
+
     pub fn get_size(&self) -> u128 {
         self.size
     }

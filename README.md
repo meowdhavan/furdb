@@ -2,7 +2,7 @@
   <h1>FurDB</h1>
 
 [![Docker Image CI](https://github.com/meowdhavan/furdb/actions/workflows/docker-image.yml/badge.svg)](https://github.com/meowdhavan/furdb/actions)
-[![Minimum rustc 1.70](https://img.shields.io/badge/rustc-1.70+-blue.svg)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
+[![Minimum rustc 1.88](https://img.shields.io/badge/rustc-1.88+-blue.svg)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
 [![oq3_semantics crate](https://img.shields.io/crates/v/furdb.svg)](https://crates.io/crates/furdb)
 [![Docker Image Size (latest)](https://img.shields.io/docker/image-size/madhavanraja/furdb/latest)](https://hub.docker.com/r/madhavanraja/furdb)
 
@@ -37,6 +37,9 @@ cd ./furdb
 cargo build --release
 ```
 
+`protoc` is **not** required — the build script vendors its own copy to compile
+`proto/furdb.proto`.
+
 ## Starting the Server
 
 ### Docker
@@ -68,7 +71,7 @@ services:
     restart: on-failure
 ```
 
-The server can be accessed at `http://furdb:{PORT}`.
+The server can be reached at `furdb:{PORT}` over gRPC (h2c, no TLS).
 
 ### Command Line
 
@@ -86,15 +89,63 @@ furdb help
 
 ## Usage
 
-**FurDB Server** provides REST API endpoints for creating, reading, and deleting databases, tables, and entries.
+**FurDB Server** exposes a gRPC service, `furdb.FurDb`, for creating, reading, and
+deleting databases, tables, and entries. The service definition lives in
+[`proto/furdb.proto`](proto/furdb.proto).
+
+The examples below use [`grpcurl`](https://github.com/fullstorydev/grpcurl), which
+takes the schema from the repository:
+
+```sh
+grpcurl -plaintext -proto proto/furdb.proto -d '{ … }' \
+  localhost:5678 furdb.FurDb/<Method>
+```
+
+### The Response Envelope
+
+Every successful response carries the same envelope, with the operation-specific
+payload under `response`:
+
+```json
+{
+  "result": "success",
+  "statusCode": 200,
+  "status": "OK",
+  "response": {}
+}
+```
+
+Failures do not use the envelope — they come back as gRPC statuses:
+
+| Failure               | gRPC code          |
+| --------------------- | ------------------ |
+| Not Found             | `NOT_FOUND`        |
+| Bad Request           | `INVALID_ARGUMENT` |
+| Conflict              | `ALREADY_EXISTS`   |
+| Internal Server Error | `INTERNAL`         |
+
+The `statusCode`/`status` pair is echoed in the `x-furdb-status-code` and
+`x-furdb-status` trailers, so it is still available on the error path.
+
+### A Note on Numbers
+
+A column may be up to 128 bits wide, and protobuf has no 128-bit integer type, so
+the values stored in one travel as **decimal strings** (`"21"`, not `21`). Column
+sizes and indices are bounded and stay numeric.
 
 ### Checking Server Info
 
 Gets server information.
 
-**Endpoint**
+**Method**
 
-`GET` `/`
+`furdb.FurDb/GetServerInfo`
+
+**Request**
+
+```json
+{}
+```
 
 **Response**
 
@@ -104,10 +155,7 @@ Gets server information.
   "statusCode": 200,
   "status": "OK",
   "response": {
-    "message": "Server is running",
-    "config": {
-      "workdir": "/furdb"
-    }
+    "workdir": "/furdb"
   }
 }
 ```
@@ -116,9 +164,17 @@ Gets server information.
 
 Create a database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`POST` `/my_database`
+`furdb.FurDb/CreateDatabase`
+
+**Request**
+
+```json
+{
+  "databaseId": "my_database"
+}
+```
 
 **Response**
 
@@ -137,9 +193,17 @@ Create a database with ID `my_database`.
 
 Get info of database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`GET` `/my_database`
+`furdb.FurDb/GetDatabase`
+
+**Request**
+
+```json
+{
+  "databaseId": "my_database"
+}
+```
 
 **Response**
 
@@ -159,9 +223,17 @@ Get info of database with ID `my_database`.
 
 Delete database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`DELETE` `/my_database`
+`furdb.FurDb/DeleteDatabase`
+
+**Request**
+
+```json
+{
+  "databaseId": "my_database"
+}
+```
 
 **Response**
 
@@ -169,8 +241,7 @@ Delete database with ID `my_database`.
 {
   "result": "success",
   "statusCode": 200,
-  "status": "OK",
-  "response": null
+  "status": "OK"
 }
 ```
 
@@ -178,14 +249,16 @@ Delete database with ID `my_database`.
 
 Creates a table with ID `my_table` in the database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`POST` `/my_database/my_table`
+`furdb.FurDb/CreateTable`
 
 **Request**
 
 ```json
 {
+  "databaseId": "my_database",
+  "tableId": "my_table",
   "tableColumns": [
     {
       "size": 5
@@ -223,9 +296,18 @@ Creates a table with ID `my_table` in the database with ID `my_database`.
 
 Get info of table with ID `my_table` in the database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`GET` `/my_database/my_table`
+`furdb.FurDb/GetTable`
+
+**Request**
+
+```json
+{
+  "databaseId": "my_database",
+  "tableId": "my_table"
+}
+```
 
 **Response**
 
@@ -253,9 +335,18 @@ Get info of table with ID `my_table` in the database with ID `my_database`.
 
 Delete table with ID `my_table` in the database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`DELETE` `/my_database/my_table`
+`furdb.FurDb/DeleteTable`
+
+**Request**
+
+```json
+{
+  "databaseId": "my_database",
+  "tableId": "my_table"
+}
+```
 
 **Response**
 
@@ -263,8 +354,7 @@ Delete table with ID `my_table` in the database with ID `my_database`.
 {
   "result": "success",
   "statusCode": 200,
-  "status": "OK",
-  "response": null
+  "status": "OK"
 }
 ```
 
@@ -272,21 +362,23 @@ Delete table with ID `my_table` in the database with ID `my_database`.
 
 Insert entries into table with ID `my_table` in the database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`POST` `/my_database_/my_table/data`
+`furdb.FurDb/InsertEntries`
 
 **Request**
 
 ```json
 {
+  "databaseId": "my_database",
+  "tableId": "my_table",
   "data": [
-    [21, 0],
-    [17, 1],
-    [23, 2],
-    [9, 0],
-    [31, 1],
-    [0, 2]
+    { "data": ["21", "0"] },
+    { "data": ["17", "1"] },
+    { "data": ["23", "2"] },
+    { "data": ["9", "0"] },
+    { "data": ["31", "1"] },
+    { "data": ["0", "2"] }
   ]
 }
 ```
@@ -297,8 +389,7 @@ Insert entries into table with ID `my_table` in the database with ID `my_databas
 {
   "result": "success",
   "statusCode": 201,
-  "status": "Created",
-  "response": null
+  "status": "Created"
 }
 ```
 
@@ -306,9 +397,9 @@ Insert entries into table with ID `my_table` in the database with ID `my_databas
 
 Get entries from table with ID `my_table` in the database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`GET` `/my_database_/my_table/data`
+`furdb.FurDb/GetEntries`
 
 #### Get All Entries
 
@@ -316,7 +407,9 @@ Get entries from table with ID `my_table` in the database with ID `my_database`.
 
 ```json
 {
-  "entries": "all"
+  "databaseId": "my_database",
+  "tableId": "my_table",
+  "all": {}
 }
 ```
 
@@ -332,27 +425,27 @@ Get entries from table with ID `my_table` in the database with ID `my_database`.
     "results": [
       {
         "index": 0,
-        "data": [21, 0]
+        "data": ["21", "0"]
       },
       {
         "index": 1,
-        "data": [17, 1]
+        "data": ["17", "1"]
       },
       {
         "index": 2,
-        "data": [23, 2]
+        "data": ["23", "2"]
       },
       {
         "index": 3,
-        "data": [9, 0]
+        "data": ["9", "0"]
       },
       {
         "index": 4,
-        "data": [31, 1]
+        "data": ["31", "1"]
       },
       {
         "index": 5,
-        "data": [0, 2]
+        "data": ["0", "2"]
       }
     ]
   }
@@ -365,7 +458,9 @@ Get entries from table with ID `my_table` in the database with ID `my_database`.
 
 ```json
 {
-  "entries": {
+  "databaseId": "my_database",
+  "tableId": "my_table",
+  "indices": {
     "indices": [1, 3]
   }
 }
@@ -383,11 +478,11 @@ Get entries from table with ID `my_table` in the database with ID `my_database`.
     "results": [
       {
         "index": 1,
-        "data": [17, 1]
+        "data": ["17", "1"]
       },
       {
         "index": 3,
-        "data": [9, 0]
+        "data": ["9", "0"]
       }
     ]
   }
@@ -400,11 +495,11 @@ Get entries from table with ID `my_table` in the database with ID `my_database`.
 
 ```json
 {
-  "entries": {
-    "value": {
-      "columnIndex": 0,
-      "value": 23
-    }
+  "databaseId": "my_database",
+  "tableId": "my_table",
+  "value": {
+    "columnIndex": 0,
+    "value": "23"
   }
 }
 ```
@@ -421,7 +516,7 @@ Get entries from table with ID `my_table` in the database with ID `my_database`.
     "results": [
       {
         "index": 2,
-        "data": [23, 2]
+        "data": ["23", "2"]
       }
     ]
   }
@@ -432,9 +527,9 @@ Get entries from table with ID `my_table` in the database with ID `my_database`.
 
 Delete entries from table with ID `my_table` in the database with ID `my_database`.
 
-**Endpoint**
+**Method**
 
-`DELETE` `/:database_id/:table_id/data`
+`furdb.FurDb/DeleteEntries`
 
 #### Delete All Entries
 
@@ -442,7 +537,9 @@ Delete entries from table with ID `my_table` in the database with ID `my_databas
 
 ```json
 {
-  "entries": "all"
+  "databaseId": "my_database",
+  "tableId": "my_table",
+  "all": {}
 }
 ```
 
@@ -452,8 +549,7 @@ Delete entries from table with ID `my_table` in the database with ID `my_databas
 {
   "result": "success",
   "statusCode": 200,
-  "status": "OK",
-  "response": null
+  "status": "OK"
 }
 ```
 
@@ -463,7 +559,9 @@ Delete entries from table with ID `my_table` in the database with ID `my_databas
 
 ```json
 {
-  "entries": {
+  "databaseId": "my_database",
+  "tableId": "my_table",
+  "indices": {
     "indices": [1]
   }
 }
@@ -475,7 +573,6 @@ Delete entries from table with ID `my_table` in the database with ID `my_databas
 {
   "result": "success",
   "statusCode": 200,
-  "status": "OK",
-  "response": null
+  "status": "OK"
 }
 ```

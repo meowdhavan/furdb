@@ -38,11 +38,11 @@ Unit tests go in a `#[cfg(test)] mod tests` block beside the code. Prefer table-
 
 Filesystem-dependent tests must use an isolated temporary directory per test and clean up after themselves — never a shared fixed path, since `cargo test` runs tests in parallel by default and shared paths cause flaky cross-talk. Add `tempfile` as a dev-dependency for this rather than hand-rolling it.
 
-For actix-web handlers, use `actix_web::test` with `test::init_service` and `test::TestRequest` to exercise routes in-process. Assert on both status code and response body shape.
+For gRPC handlers, construct a `FurDbService` and call the generated `FurDb` trait methods with `tonic::Request` to exercise RPCs in-process (see the tests in `src/server/furdb_service.rs`). Assert on both the response envelope and, for failures, the `tonic::Status` code. To exercise the real transport, start a server and drive it with the generated `proto::fur_db_client::FurDbClient`.
 
 Note that this crate is **binary-only** — there is no `[lib]` target, so integration tests under `tests/` cannot `use furdb::…`. Either write unit tests inside `src/`, or, if genuine black-box integration tests are wanted, say so and propose adding a library target rather than working around it silently.
 
-Async tests need `#[actix_web::test]` (or `#[tokio::test]`). A test asserting a panic should use `#[should_panic(expected = "…")]` with the message, not a bare attribute.
+Async tests need `#[tokio::test]`. A test asserting a panic should use `#[should_panic(expected = "…")]` with the message, not a bare attribute.
 
 ## Before finishing
 

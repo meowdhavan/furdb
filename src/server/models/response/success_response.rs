@@ -1,40 +1,65 @@
-use actix_web::{HttpResponse, Responder};
-use serde::Serialize;
+use crate::server::models::response::api_response::{SuccessStatus, RESULT_SUCCESS};
+use crate::server::proto;
 
-use crate::core::FurDBConfig;
+/// Constructors for every successful response message. This is the single place
+/// that decides which status a given operation reports, so a new RPC means a
+/// new constructor here.
+macro_rules! success_response {
+    ($response:ident, $status:expr, $payload:ty) => {
+        impl proto::$response {
+            pub fn new(response: $payload) -> Self {
+                let status = $status;
 
-use crate::core::models;
+                Self {
+                    result: RESULT_SUCCESS.to_string(),
+                    status_code: status.get_status_code(),
+                    status: status.get_status(),
+                    response: Some(response),
+                }
+            }
+        }
+    };
+    ($response:ident, $status:expr) => {
+        impl proto::$response {
+            pub fn new() -> Self {
+                let status = $status;
 
-use models::DatabaseInfo;
-use models::DatabaseInfoExtra;
-
-use models::TableInfo;
-
-use models::EntriesResult;
-
-use crate::server::models::response::ApiResponseSerializable;
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-#[serde(untagged)]
-pub enum SuccessResponse {
-    ServerInfo(FurDBConfig),
-    DatabaseCreated(DatabaseInfo),
-    DatabaseInfo(DatabaseInfoExtra),
-    DatabaseDeleted,
-    TableCreated(TableInfo),
-    TableInfo(TableInfo),
-    TableDeleted,
-    EntriesCreated,
-    EntriesResult(EntriesResult),
-    EntriesDeleted,
+                Self {
+                    result: RESULT_SUCCESS.to_string(),
+                    status_code: status.get_status_code(),
+                    status: status.get_status(),
+                }
+            }
+        }
+    };
 }
 
-impl Responder for SuccessResponse {
-    type Body = actix_web::body::BoxBody;
+success_response!(ServerInfoResponse, SuccessStatus::Ok, proto::FurDbConfig);
 
-    fn respond_to(self, _req: &actix_web::HttpRequest) -> actix_web::HttpResponse<Self::Body> {
-        let (response, status_code) = ApiResponseSerializable::generate_success(&self);
-        HttpResponse::build(status_code).json(response)
-    }
-}
+success_response!(
+    DatabaseCreatedResponse,
+    SuccessStatus::Created,
+    proto::DatabaseInfo
+);
+success_response!(
+    DatabaseInfoResponse,
+    SuccessStatus::Ok,
+    proto::DatabaseInfoExtra
+);
+success_response!(DatabaseDeletedResponse, SuccessStatus::Ok);
+
+success_response!(
+    TableCreatedResponse,
+    SuccessStatus::Created,
+    proto::TableInfo
+);
+success_response!(TableInfoResponse, SuccessStatus::Ok, proto::TableInfo);
+success_response!(TableDeletedResponse, SuccessStatus::Ok);
+
+success_response!(EntriesCreatedResponse, SuccessStatus::Created);
+success_response!(
+    EntriesResultResponse,
+    SuccessStatus::Ok,
+    proto::EntriesResult
+);
+success_response!(EntriesDeletedResponse, SuccessStatus::Ok);

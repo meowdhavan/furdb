@@ -1,15 +1,13 @@
-use actix_web::get;
-use actix_web::web::Data;
-
 use crate::core::FurDB;
 
 use crate::server::models::response::ErrorResponse;
-use crate::server::models::response::SuccessResponse;
+use crate::server::proto;
 
-#[get("/")]
-pub async fn info_handler(data: Data<FurDB>) -> Result<SuccessResponse, ErrorResponse> {
-    let furdb = data.as_ref();
+pub fn get_server_info(
+    furdb: &FurDB,
+    _request: proto::GetServerInfoRequest,
+) -> Result<proto::ServerInfoResponse, ErrorResponse> {
     let furdb_config = furdb.get_config();
 
-    Ok(SuccessResponse::ServerInfo(furdb_config))
+    Ok(proto::ServerInfoResponse::new(furdb_config.into()))
 }
