@@ -27,7 +27,10 @@ impl Table {
 
                 let mut current_entry_bin = BitVec::<u8, Msb0>::new();
 
-                if element >= 2u128.pow(element_size as u32) {
+                // `2u128.pow(element_size)` overflows once a column is 128 bits
+                // wide, so the bound is expressed as a shift that is only taken
+                // when it fits — a 128-bit column holds any `u128`.
+                if element_size < 128 && element >= (1u128 << element_size) {
                     return Err(EntryInsertionError::ColumnOverflow);
                 }
 

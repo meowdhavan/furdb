@@ -2,6 +2,7 @@
 name = "furdb"
 version = "0.1.2-alpha"
 edition = "2021"
+rust-version = "1.88"
 authors = ["Madhavan Raja"]
 license-file = "LICENSE"
 readme = "README.md"
@@ -10,16 +11,23 @@ description = """A minimal Database Management System that prioritizes storage s
 and fast lookup/query times."""
 
 [dependencies]
-openssl = { version = "0.10", features = ["vendored"] }
-actix-web = "4"
+tonic = "0.14"
+tonic-prost = "0.14"
+prost = "0.14"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0"
 dotenv = "0.15.0"
-chrono = "0.4.34"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 env_logger = "0.11.3"
 log = "0.4.21"
 clap-verbosity-flag = "2.2.0"
 thiserror = "1.0.58"
 bitvec = "1.0.0"
-reqwest = { version = "0.12.3", features = ["blocking"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+protoc-bin-vendored = "3"

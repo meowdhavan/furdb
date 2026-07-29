@@ -86,7 +86,7 @@ pub enum TableCreationError {
     AlreadyExists,
     #[error("{TABLE_CREATION_ERROR_MESSAGE}: Invalid Table ID")]
     InvalidId,
-    #[error("{TABLE_CREATION_ERROR_MESSAGE}: Size of row must be a multiple of 8")]
+    #[error("{TABLE_CREATION_ERROR_MESSAGE}: Size of row must be a non-zero multiple of 8")]
     ColumnsUnfit,
     #[error("{TABLE_CREATION_ERROR_MESSAGE}")]
     OtherError(String),

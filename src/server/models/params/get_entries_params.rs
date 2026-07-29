@@ -1,38 +1,13 @@
-use serde::{Deserialize, Serialize};
+use crate::server::models::response::ErrorResponse;
+use crate::server::proto;
+use crate::server::utils::parse_u128;
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct GetEntriesByValuesParams {
-    column_index: u64,
-    value: u128,
-}
-
-impl GetEntriesByValuesParams {
+impl proto::EntriesByValue {
     pub fn get_column_index(&self) -> u64 {
-        self.column_index.to_owned()
+        self.column_index
     }
 
-    pub fn get_value(&self) -> u128 {
-        self.value.to_owned()
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub enum GetEntriesType {
-    All,
-    Indices(Vec<u64>),
-    Value(GetEntriesByValuesParams),
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct GetEntriesParams {
-    entries: GetEntriesType,
-}
-
-impl GetEntriesParams {
-    pub fn get_entries(&self) -> GetEntriesType {
-        self.entries.to_owned()
+    pub fn get_value(&self) -> Result<u128, ErrorResponse> {
+        parse_u128(&self.value, "value")
     }
 }

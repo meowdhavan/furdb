@@ -14,7 +14,9 @@ cargo fmt
 docker compose up --build                          # containerized run, port 5678
 ```
 
-There are currently **no tests** in this repo (no `tests/` directory, no `#[cfg(test)]` modules). `cargo test` succeeds vacuously. If adding tests, `cargo test <name>` runs a single one.
+Tests live in `#[cfg(test)] mod tests` inside `src/server/furdb_service.rs` and drive the gRPC service in-process (`cargo test`, or `cargo test <name>` for one). The crate is binary-only, so a `tests/` directory cannot `use furdb::…` — new tests belong inside `src/`.
+
+`build.rs` compiles `proto/furdb.proto` with `tonic-prost-build`. `protoc` is vendored via `protoc-bin-vendored`, so no system package is needed; the generated module is pulled in by `tonic::include_proto!` in `src/server/proto.rs`.
 
 `WORKDIR` and `PORT` env vars back the `--workdir` / `--port` flags (clap `env` attribute), and `main.rs` loads `.env` via `dotenv`. Verbosity comes from `clap-verbosity-flag` (`-v`, `-vv`, …), defaulting to info.
 
@@ -24,9 +26,9 @@ CI: `.github/workflows/docker-image.yml` builds and pushes the Docker image; `pu
 
 Single binary crate with a strict two-layer split:
 
-- **`src/core/`** — the storage engine. Pure filesystem + bit manipulation, zero HTTP awareness.
-- **`src/server/`** — a thin actix-web REST wrapper around `core`.
-- **`src/main.rs`** — parses `Cli`, builds `FurDB::new(&furdb_config)` (creates the workdir if missing), and hands it to `Server::start()`. The single `FurDB` is shared with handlers as `web::Data<FurDB>`.
+- **`src/core/`** — the storage engine. Pure filesystem + bit manipulation, zero transport awareness.
+- **`src/server/`** — a thin tonic gRPC wrapper around `core`.
+- **`src/main.rs`** — parses `Cli`, builds `FurDB::new(&furdb_config)` (creates the workdir if missing), and hands it to `Server::start()`. The single `FurDB` is owned by `FurDbService` and shared with handlers by reference.
 
 Modules follow the `foo.rs` + `foo/` sibling-directory convention (no `mod.rs`).
 
@@ -55,7 +57,7 @@ The entity hierarchy is `FurDB` → `Database` → `Table`, and each level's ope
 
 ### Bit-packed storage
 
-Each `Column` declares a bit `size` (`u128` values). A row is the concatenation of its columns' bits, MSB-first (`BitVec<u8, Msb0>`). **The total row size must be a multiple of 8** — `create_table` rejects anything else with `TableCreationError::ColumnsUnfit`, because the whole engine computes `entry_size = sum(column sizes) / 8` bytes and addresses entries as `index * entry_size` byte offsets in `data`. Values that don't fit their column are rejected as `EntryInsertionError::ColumnOverflow`. There is no header and no per-entry delimiter; entry count is inferred from file length.
+Each `Column` declares a bit `size` (`u128` values). A row is the concatenation of its columns' bits, MSB-first (`BitVec<u8, Msb0>`). **The total row size must be a non-zero multiple of 8** — `create_table` rejects anything else with `TableCreationError::ColumnsUnfit`, because the whole engine computes `entry_size = sum(column sizes) / 8` bytes and addresses entries as `index * entry_size` byte offsets in `data`. Values that don't fit their column are rejected as `EntryInsertionError::ColumnOverflow`. There is no header and no per-entry delimiter; entry count is inferred from file length.
 
 ### Sortfile and querying
 
@@ -74,21 +76,27 @@ Consequences worth knowing before changing write paths:
 
 ### Response envelope
 
-Every response — success or error — is wrapped by `ApiResponseSerializable` in `src/server/models/response/api_response.rs`:
+Success responses keep the envelope the REST API used to return — every `*Response` message in `proto/furdb.proto` declares `result`, `status_code`, `status` and (where there is a payload) `response`:
 
 ```json
 { "result": "success", "statusCode": 200, "status": "OK", "response": {} }
 ```
 
-HTTP status is derived from the enum variant, not chosen in the handler: `SuccessResponse` implements `Responder` and `ErrorResponse` implements `ResponseError`, both delegating to `generate_success` / `generate_error`. So a new endpoint means adding a `SuccessResponse` variant **and** its status-code arm in `api_response.rs`.
+The status is decided in one place, not in the handler: `src/server/models/response/success_response.rs` invokes the `success_response!` macro once per response message with the `SuccessStatus` it reports. **A new RPC means a new `success_response!` line there**, or the message has no constructor.
 
-Both response enums are `#[serde(untagged)]`, so the variant name never appears in JSON. All models use `#[serde(rename_all = "camelCase")]`; request bodies are typed structs in `src/server/models/params/`.
+Failures do *not* use the envelope — `From<ErrorResponse> for tonic::Status` in `error_response.rs` maps `NotFound`/`BadRequest`/`Conflict`/`InternalServerError` onto `NOT_FOUND`/`INVALID_ARGUMENT`/`ALREADY_EXISTS`/`INTERNAL`, echoing the old HTTP status pair in the `x-furdb-status-code` / `x-furdb-status` trailers.
+
+Core models are converted to their wire form by the `From` impls in `src/server/models/conversions.rs`. **`u128` has no protobuf counterpart**, so entry values and query values cross the wire as decimal strings and are parsed back by `server::utils::parse_u128` (column sizes are bounded by the row size, so they stay `uint64`). The request-side conversions live in `src/server/models/params/`; handlers parse them **before** touching the filesystem so a malformed request is rejected as `INVALID_ARGUMENT` rather than `NOT_FOUND`.
 
 ### Handler conventions
 
-Handlers live one-per-file in `src/server/operations/<group>/`, use actix route macros (`#[get("/{database_id}/{table_id}/data")]`), and must be registered in `Server::start()` in `src/server/furdb_server.rs` — registration is manual and easy to forget.
+Handlers live one-per-file in `src/server/operations/<group>/` as plain functions taking `(&FurDB, proto::<Rpc>Request)` and returning `Result<proto::<Rpc>Response, ErrorResponse>` — they never touch tonic types.
 
-Routes are `/{database_id}`, `/{database_id}/{table_id}`, and `/{database_id}/{table_id}/data`. Note that the entry-data `GET` and `DELETE` endpoints **take a JSON body** (`GetEntriesParams` / `DeleteEntriesParams`), which many HTTP clients won't send by default — use `curl -X GET -d '...' -H 'Content-Type: application/json'` when testing. See README.md for full request/response examples.
+`src/server/furdb_service.rs` holds the single `impl proto::fur_db_server::FurDb for FurDbService` block that every RPC must be listed in — this is the gRPC equivalent of route registration, and it is manual and easy to forget. Its `respond()` helper logs the outcome and converts `ErrorResponse` into `tonic::Status`.
+
+Adding an RPC therefore touches four places: `proto/furdb.proto`, the handler file, `src/server/operations.rs`, and the trait impl in `furdb_service.rs`.
+
+The service is served as h2c (no TLS) on `0.0.0.0:{port}`, and drains in-flight requests on SIGINT/SIGTERM — do not remove that, since a delete killed mid-rewrite leaves `data` and `sortfile` out of step. Note this only covers process termination: nothing locks a table, so concurrent writes to one can still interleave (pre-existing). See README.md for full request/response examples.
 
 ## Platform constraint
 

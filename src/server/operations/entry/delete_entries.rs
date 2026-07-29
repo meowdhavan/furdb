@@ -1,29 +1,24 @@
-use actix_web::delete;
-use actix_web::web::{Data, Json, Path};
-
 use crate::core::FurDB;
 
-use crate::server::models::params::{DeleteEntriesParams, DeleteEntriesType};
-
 use crate::server::models::response::ErrorResponse;
-use crate::server::models::response::SuccessResponse;
+use crate::server::proto;
+use crate::server::proto::delete_entries_request::Entries;
 
-#[delete("/{database_id}/{table_id}/data")]
-pub async fn delete_entries_handler(
-    data: Data<FurDB>,
-    path: Path<(String, String)>,
-    delete_entries_params: Json<DeleteEntriesParams>,
-) -> Result<SuccessResponse, ErrorResponse> {
-    let (database_id, table_id) = path.into_inner();
+pub fn delete_entries(
+    furdb: &FurDB,
+    request: proto::DeleteEntriesRequest,
+) -> Result<proto::EntriesDeletedResponse, ErrorResponse> {
+    let entries = request.entries.as_ref().ok_or_else(|| {
+        ErrorResponse::BadRequest("No entry selection given for `entries`".to_string())
+    })?;
 
-    let furdb = data.as_ref();
-    let database = furdb.get_database(&database_id)?;
-    let table = database.get_table(&table_id)?;
+    let database = furdb.get_database(&request.database_id)?;
+    let table = database.get_table(&request.table_id)?;
 
-    match &delete_entries_params.get_entries() {
-        DeleteEntriesType::All => table.delete_all_entries(),
-        DeleteEntriesType::Indices(indices) => table.delete_entries(indices.to_vec()),
+    match entries {
+        Entries::All(_) => table.delete_all_entries(),
+        Entries::Indices(entry_indices) => table.delete_entries(entry_indices.indices.to_vec()),
     }?;
 
-    Ok(SuccessResponse::EntriesDeleted)
+    Ok(proto::EntriesDeletedResponse::new())
 }

@@ -67,7 +67,11 @@ impl Table {
         // Lower Bound
 
         let mut left = (column_index * entry_count) as i128;
-        let mut right = (((column_index + 1) as i128) * (entry_count as i128 - 1)) as i128;
+        // The slice of the sortfile belonging to this column ends at
+        // `(column_index + 1) * entry_count - 1`. Distributing the `- 1`
+        // over the product instead would put the bound `column_index`
+        // entries short, hiding the column's largest values.
+        let mut right = ((column_index + 1) as i128) * (entry_count as i128) - 1;
 
         while left <= right {
             let mid = left + (right - left) / 2;
@@ -96,7 +100,11 @@ impl Table {
         // Upper Bound
 
         let mut left = (column_index * entry_count) as i128;
-        let mut right = (((column_index + 1) as i128) * (entry_count as i128 - 1)) as i128;
+        // The slice of the sortfile belonging to this column ends at
+        // `(column_index + 1) * entry_count - 1`. Distributing the `- 1`
+        // over the product instead would put the bound `column_index`
+        // entries short, hiding the column's largest values.
+        let mut right = ((column_index + 1) as i128) * (entry_count as i128) - 1;
 
         while left <= right {
             let mid = left + (right - left) / 2;
